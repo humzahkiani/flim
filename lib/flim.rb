@@ -3,6 +3,10 @@
 require 'io/console'
 require 'debug'
 
+INTERRUPT = 3.chr
+ERASE_LINE = '0K'
+CURSOR_POSITION = '6n'
+
 def execute_escape_code(code)
   print "\e[#{code}"
 end
@@ -13,8 +17,7 @@ def move_cursor(line, col)
 end
 
 def erase_line
-  erase_line_code = '0K'
-  execute_escape_code(erase_line_code)
+  execute_escape_code(ERASE_LINE)
 end
 
 # This is the cursor position relative to the viewport. It is NOT absolute. Will change on terminal scroll
@@ -24,8 +27,7 @@ def cursor_position
 
   # Raw mode to handle cursor position as input stream without echoing
   $stdin.raw do |io|
-    cursor_position_code = '6n'
-    execute_escape_code(cursor_position_code)
+    execute_escape_code(CURSOR_POSITION)
 
     response << io.readpartial(1) until response[-1] == 'R'
   end
@@ -36,6 +38,8 @@ end
 off_text = 'FLIPPED OFF'
 on_text = 'FLIPPED ON'
 curr_text = off_text
+
+ctrl_c = 3.chr
 
 # Event loop
 loop do
@@ -50,14 +54,15 @@ loop do
   $stdin.raw do |io|
     response << io.readpartial(10)
   end
-  key = response.scan(/(?<=\e\[)C/).first
+  key = response.scan(/(?<=\e\[).+?/).first
+
+  # Control C interrupt event loop
+  break if response == ctrl_c
+
   next unless key == 'C'
 
   # 3. Process input signals
-  curr_text = if curr_text == off_text
-                on_text
-              else
-                off_text
-              end
+  line, col = cursor_position
+  move_cursor(line, col - 1)
   # 4. Repeat
 end
