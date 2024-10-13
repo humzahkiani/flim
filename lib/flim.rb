@@ -3,7 +3,12 @@
 require 'io/console'
 require 'debug'
 
+# Main Entrypoint
 class Flim
+  def initialize(args)
+    validate_args(args)
+  end
+
   def run
     # Event loop
     off_text = 'ITS OFF'
@@ -40,6 +45,12 @@ class Flim
   INTERRUPT = 3.chr
   ERASE_LINE = '0K'
   CURSOR_POSITION = '6n'
+
+  def validate_args(args)
+    return unless args.size > 1
+
+    raise 'You may supply at most one filename as an argument'
+  end
 
   def execute_escape_code(code)
     print "\e[#{code}"

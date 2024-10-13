@@ -2,5 +2,4 @@
 
 require_relative '../lib/flim'
 
-# Your command-line interface logic goes here
-Flim.new.run
+Flim.new(ARGV).run
