@@ -159,7 +159,7 @@ class Flim
     response = String.new
 
     # Raw mode to handle cursor position as input stream without echoing
-    $stdin.raw do |io|
+    console.raw do |io|
       execute_escape_code(CURSOR_POSITION)
 
       response << io.readpartial(1) until response[-1] == 'R'
