@@ -1,4 +1,4 @@
-# ruby-text-editor
+# flim
 A ruby TUI text editor 
 
 
