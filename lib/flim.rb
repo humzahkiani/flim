@@ -3,10 +3,11 @@
 require 'debug'
 
 class Flim
-  attr_accessor :terminal
+  attr_accessor :terminal, :filepath, :file
 
-  def initialize
+  def initialize(args)
     @terminal = IO.console
+    @filepath = validate_args(args)
   end
 
   SWITCH_TO_ALTERNATE_BUFFER = '?1049h'
@@ -18,11 +19,8 @@ class Flim
 
   # Event Loop
   def run
-    
-    # Switch to alternative buffer and set cursor
-    execute_escape_code(SWITCH_TO_ALTERNATE_BUFFER)
-    terminal.goto(0,0)
 
+    setup
     loop do
       input_sequence = String.new
       terminal.raw do |io|
@@ -36,6 +34,45 @@ class Flim
 
   private
 
+  def setup
+    # File Handling 
+    if File.exist?(filepath)
+
+      # 1. Open file
+      @file = File.open(filepath)
+      
+      # 2. Switch to alternate buffer
+      execute_escape_code(SWITCH_TO_ALTERNATE_BUFFER)
+      
+      # 3. Stream file contents to terminal
+      content = file.read
+      file.each_line do |line|
+        puts line
+      end 
+    else
+      # 1. Create file
+      @file = File.new(filepath, 'w')
+      
+      # 2. Switch to alernate buffer 
+      execute_escape_code(SWITCH_TO_ALTERNATE_BUFFER)
+    end 
+    terminal.goto(0,0) 
+  end 
+
+  def teardown
+    execute_escape_code(SWITCH_TO_MAIN_BUFFER)
+    file.close
+    exit
+  end
+
+  def validate_args(args)
+    if args.count != 1
+      raise 'Please supply exactly one filename as an argument'
+    end
+
+    return args[0]
+  end
+
   def process_input(buffer)
 
     # Control Char or Printable Char
@@ -45,8 +82,7 @@ class Flim
           # Specifically handle each control char
           case buffer.ord
           when 3
-            execute_escape_code(SWITCH_TO_MAIN_BUFFER)
-            exit
+            teardown
           end
         end
 
