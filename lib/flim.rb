@@ -35,34 +35,32 @@ class Flim
     private
 
     def setup
-        # File Handling
+
         if File.exist?(filepath)
-
-            # 1. Open file
             @file = File.open(filepath)
-
-            # 2. Switch to alternate buffer
-            execute_escape_code(SWITCH_TO_ALTERNATE_BUFFER)
-
-            # 3. Stream file contents to terminal
-            file.read
-            file.each_line do |line|
-                puts line
-            end
         else
-            # 1. Create file
             @file = File.new(filepath, 'w')
-
-            # 2. Switch to alernate buffer
-            execute_escape_code(SWITCH_TO_ALTERNATE_BUFFER)
         end
-        terminal.goto(0, 0)
+
+        execute_escape_code(SWITCH_TO_ALTERNATE_BUFFER)
+        terminal.goto(0,0)
+
+        # Ingest existing file state and display in terminal
+        unless file.size.zero?
+            file.each_line do |line|
+                virtual_buffer << line
+            end
+
+            virtual_buffer.each do |line|
+                print line
+            end
+        end
     end
 
     def teardown
         execute_escape_code(SWITCH_TO_MAIN_BUFFER)
-      file.close
-      exit
+        file.close
+        exit
     end
 
     def validate_args(args)
