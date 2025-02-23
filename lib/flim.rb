@@ -48,7 +48,7 @@ class Flim
             file.read
             file.each_line do |line|
                 puts line
-          end
+            end
         else
             # 1. Create file
             @file = File.new(filepath, 'w')
