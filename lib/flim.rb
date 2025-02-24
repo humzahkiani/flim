@@ -3,39 +3,61 @@
 require 'debug'
 
 class Flim
-    attr_accessor :terminal, :filepath, :file, :virtual_buffer
+    attr_accessor :terminal, :filepath, :file, :virtual_buffer, :virtual_cursor
 
     def initialize(args)
         @terminal = IO.console
         @filepath = validate_args(args)
         @virtual_buffer = []
+        @virtual_cursor = [0,0]
     end
 
-    SWITCH_TO_ALTERNATE_BUFFER = '?1049h'
-    SWITCH_TO_MAIN_BUFFER = '?1049l'
+    # Control Chars
     INTERRUPT_SIGNAL = 3.chr
 
+    # Escape Sequences
+    SWITCH_TO_ALTERNATE_BUFFER = '?1049h'
+    SWITCH_TO_MAIN_BUFFER = '?1049l'
+    
+    # CSI Sequences
+    CURSOR_UP = 'A'
+    CURSOR_DOWN = 'B'
+    CURSOR_FORWARD = 'C'
+    CURSOR_BACK = 'D'
+
     LAST_BYTE_CSI_SEQUENCE_REGEX = /(?<=\e\[).+/
-    LAST_BYTE_CSI_SEQUENCE_CURSOR_MOVEMENT = %w[A B C D].freeze
+    LAST_BYTE_CSI_SEQUENCE_CURSOR_MOVEMENT = %w[CURSOR_UP, CURSOR_DOWN, CURSOR_FORWARD, CURSOR_BACK].freeze
 
     # Event Loop
     def run
         setup
+        begin
+            loop do
+                terminal.raw do |io|
+                    sync_console_to_virtual_buffer
 
-        loop do
-            terminal.raw do |io|
-                buffer = io.readpartial(256) # Read a larger chunk
-                next if buffer.empty?
+                    buffer = io.readpartial(256) # Read a larger chunk
+                    next if buffer.empty?
 
-                process_input(buffer)
+                    process_input(buffer)
+                end
             end
+        rescue StandardError => e
+            teardown(error: e)
         end
     end
 
     private
 
-    def setup
+    def sync_console_to_virtual_buffer
+        terminal.goto(0,0)
+        virtual_buffer.each do |line|
+            print line
+        end 
+        terminal.cursor = virtual_cursor
+    end 
 
+    def setup
         if File.exist?(filepath)
             @file = File.open(filepath)
         else
@@ -50,16 +72,15 @@ class Flim
             file.each_line do |line|
                 virtual_buffer << line
             end
-
-            virtual_buffer.each do |line|
-                print line
-            end
         end
     end
 
-    def teardown
+    def teardown(error: nil)
         execute_escape_code(SWITCH_TO_MAIN_BUFFER)
         file.close
+        if error
+            $stderr.puts("Flim closed unexpectedly due to the following error: #{error.message}")
+        end
         exit
     end
 
@@ -68,6 +89,11 @@ class Flim
 
         args[0]
     end
+
+    def virtual_buffer_update_char(char)
+        virtual_buffer[virtual_cursor[0]][virtual_cursor[1]] = char
+        virtual_cursor[1] += 1
+    end 
 
     def process_input(buffer)
         # Control Char or Printable Char
@@ -82,14 +108,22 @@ class Flim
             end
 
             # Printable char (letters, numbers, chars etc.)
-            print buffer if buffer.ord.between?(32, 126)
+            if buffer.ord.between?(32, 126)
+                virtual_buffer_update_char(buffer)
+            end
 
         # CSI Sequence
         elsif buffer.start_with?("\e[")
             last_byte = buffer.match(LAST_BYTE_CSI_SEQUENCE_REGEX)[0]
             case last_byte
-            when *LAST_BYTE_CSI_SEQUENCE_CURSOR_MOVEMENT
-                print buffer
+            when CURSOR_UP
+                virtual_cursor[0] -= 1
+            when CURSOR_DOWN
+                virtual_cursor[0] += 1
+            when CURSOR_FORWARD
+                virtual_cursor[1] += 1
+            when CURSOR_BACK
+                virtual_cursor[1] -= 1
             end
         else
             print 'not recognized'
