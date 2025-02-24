@@ -52,7 +52,7 @@ class Flim
     def sync_console_to_virtual_buffer
         terminal.goto(0,0)
         virtual_buffer.each do |line|
-            print line
+            $stdout.print(line)
         end 
         terminal.cursor = virtual_cursor
     end 
@@ -126,11 +126,11 @@ class Flim
                 virtual_cursor[1] -= 1
             end
         else
-            print 'not recognized'
+            $stdout.print 'not recognized'
         end
     end
 
     def execute_escape_code(code)
-        print "\e[#{code}"
+        $stdout.print "\e[#{code}"
     end
 end
