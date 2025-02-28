@@ -8,7 +8,7 @@ class Flim
     def initialize(args)
         @terminal = IO.console
         @filepath = validate_args(args)
-        @virtual_buffer = []
+        @virtual_buffer = Array.new(terminal.winsize[0]) { Array.new(terminal.winsize[1], ' ') }
         @virtual_cursor = [0,0]
     end
 
@@ -34,12 +34,18 @@ class Flim
         begin
             loop do
                 terminal.raw do |io|
-                    sync_console_to_virtual_buffer
-
+                    # 1. Event Loop starts
+                    log("<LOOP_START> - virtual_cursor: #{virtual_cursor}, terminal.cursor: #{terminal.cursor}")
+                    
+                    # 2. Wait for input (BLOCKING) 
                     buffer = io.readpartial(256) # Read a larger chunk
-                    next if buffer.empty?
-
+                    log("<RECEIVED INPUT - buffer: #{buffer}")
+                    
+                    # 3. Process input and update virtual buffer/cursor
                     process_input(buffer)
+                    
+                    # 4. Render virtual buffer/cursor to terminal 
+                    sync_console_to_virtual_buffer
                 end
             end
         rescue StandardError => e
@@ -49,13 +55,54 @@ class Flim
 
     private
 
+    # <<< EVENT LOOP >>
+
+    def process_input(buffer)
+        # Control Char or Printable Char
+        if buffer.bytesize == 1
+            # Control Char
+            if buffer.ord.between?(0, 31) || buffer.ord >= 127
+                # Specifically handle each control char
+                case buffer.ord
+                when 3
+                    teardown
+                end
+            end
+
+            # Printable char (letters, numbers, chars etc.)
+            if buffer.ord.between?(32, 126)
+                virtual_buffer_update_char(buffer)
+
+            end
+
+        # CSI Sequence
+        elsif buffer.start_with?("\e[")
+            last_byte = buffer.match(LAST_BYTE_CSI_SEQUENCE_REGEX)[0]
+            case last_byte
+            when CURSOR_UP
+                virtual_cursor[0] -= 1
+            when CURSOR_DOWN
+                virtual_cursor[0] += 1
+            when CURSOR_FORWARD
+                virtual_cursor[1] += 1
+            when CURSOR_BACK
+                virtual_cursor[1] -= 1
+            end
+        else
+            $stdout.print 'not recognized'
+        end
+    end
+
     def sync_console_to_virtual_buffer
+        curr_pos = terminal.cursor
         terminal.goto(0,0)
-        virtual_buffer.each do |line|
-            $stdout.print(line)
+        virtual_buffer.each do |row|
+            $stdout.print(row.join(""))
         end 
-        terminal.cursor = virtual_cursor
+        terminal.cursor = [*virtual_cursor]
     end 
+
+    # <<< HELPER METHODS >>>
 
     def setup
         if File.exist?(filepath)
@@ -65,13 +112,18 @@ class Flim
         end
 
         execute_escape_code(SWITCH_TO_ALTERNATE_BUFFER)
+        rows,cols = terminal.winsize
         terminal.goto(0,0)
 
         # Ingest existing file state and display in terminal
         unless file.size.zero?
-            file.each_line do |line|
-                virtual_buffer << line
+            file.each_line.with_index do |line, r|
+                line.each_char.with_index do |char, c|
+                    virtual_buffer[r][c] = char
+                end
             end
+            virtual_cursor = [0,0]
+            sync_console_to_virtual_buffer
         end
     end
 
@@ -95,42 +147,11 @@ class Flim
         virtual_cursor[1] += 1
     end 
 
-    def process_input(buffer)
-        # Control Char or Printable Char
-        if buffer.bytesize == 1
-            # Control Char
-            if buffer.ord.between?(0, 31) || buffer.ord >= 127
-                # Specifically handle each control char
-                case buffer.ord
-                when 3
-                    teardown
-                end
-            end
-
-            # Printable char (letters, numbers, chars etc.)
-            if buffer.ord.between?(32, 126)
-                virtual_buffer_update_char(buffer)
-            end
-
-        # CSI Sequence
-        elsif buffer.start_with?("\e[")
-            last_byte = buffer.match(LAST_BYTE_CSI_SEQUENCE_REGEX)[0]
-            case last_byte
-            when CURSOR_UP
-                virtual_cursor[0] -= 1
-            when CURSOR_DOWN
-                virtual_cursor[0] += 1
-            when CURSOR_FORWARD
-                virtual_cursor[1] += 1
-            when CURSOR_BACK
-                virtual_cursor[1] -= 1
-            end
-        else
-            $stdout.print 'not recognized'
-        end
-    end
-
     def execute_escape_code(code)
         $stdout.print "\e[#{code}"
     end
+
+    def log(message)
+        File.write('log.txt', message + "\n", mode: 'a')
+    end 
 end
