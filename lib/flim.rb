@@ -9,7 +9,7 @@ class Flim
         @terminal = IO.console
         @filepath = validate_args(args)
         @virtual_buffer = Array.new(terminal.winsize[0]) { Array.new(terminal.winsize[1], ' ') }
-        @virtual_cursor = [0,0]
+        @virtual_cursor = [0, 0]
     end
 
     # Control Chars
@@ -18,7 +18,7 @@ class Flim
     # Escape Sequences
     SWITCH_TO_ALTERNATE_BUFFER = '?1049h'
     SWITCH_TO_MAIN_BUFFER = '?1049l'
-    
+
     # CSI Sequences
     CURSOR_UP = 'A'
     CURSOR_DOWN = 'B'
@@ -36,16 +36,16 @@ class Flim
                 terminal.raw do |io|
                     # 1. Event Loop starts
                     log("<LOOP_START> - virtual_cursor: #{virtual_cursor}, terminal.cursor: #{terminal.cursor}")
-                    
-                    # 2. Wait for input (BLOCKING) 
+
+                    # 2. Wait for input (BLOCKING)
                     buffer = io.readpartial(256) # Read a larger chunk
                     log("<RECEIVED INPUT - buffer: #{buffer}")
-                    
+
                     # 3. Process input and update virtual buffer/cursor
                     process_input(buffer)
-                    
-                    # 4. Render virtual buffer/cursor to terminal 
-                    sync_console_to_virtual_buffer
+
+                    # 4. Sync cursors
+                    terminal.cursor = [*virtual_cursor]
                 end
             end
         rescue StandardError => e
@@ -70,10 +70,8 @@ class Flim
             end
 
             # Printable char (letters, numbers, chars etc.)
-            if buffer.ord.between?(32, 126)
-                virtual_buffer_update_char(buffer)
-
-            end
+            virtual_buffer_update_char(buffer) if buffer.ord.between?(32, 126)
+            print(buffer)
 
         # CSI Sequence
         elsif buffer.start_with?("\e[")
@@ -93,46 +91,35 @@ class Flim
         end
     end
 
-    def sync_console_to_virtual_buffer
-        curr_pos = terminal.cursor
-        terminal.goto(0,0)
-        virtual_buffer.each do |row|
-            $stdout.print(row.join(""))
-        end 
-        terminal.cursor = [*virtual_cursor]
-    end 
-
     # <<< HELPER METHODS >>>
 
     def setup
-        if File.exist?(filepath)
-            @file = File.open(filepath)
-        else
-            @file = File.new(filepath, 'w')
-        end
+        @file = if File.exist?(filepath)
+                    File.open(filepath)
+                else
+                    File.new(filepath, 'w')
+                end
 
         execute_escape_code(SWITCH_TO_ALTERNATE_BUFFER)
-        rows,cols = terminal.winsize
-        terminal.goto(0,0)
+        rows, cols = terminal.winsize
+        terminal.goto(0, 0)
 
         # Ingest existing file state and display in terminal
-        unless file.size.zero?
-            file.each_line.with_index do |line, r|
-                line.each_char.with_index do |char, c|
-                    virtual_buffer[r][c] = char
-                end
+        return if file.size.zero?
+
+        file.each_line.with_index do |line, r|
+            line.each_char.with_index do |char, c|
+                virtual_buffer[r][c] = char
             end
-            virtual_cursor = [0,0]
-            sync_console_to_virtual_buffer
         end
+        virtual_cursor = [0, 0]
+        sync_console_to_virtual_buffer
     end
 
     def teardown(error: nil)
         execute_escape_code(SWITCH_TO_MAIN_BUFFER)
         file.close
-        if error
-            $stderr.puts("Flim closed unexpectedly due to the following error: #{error.message}")
-        end
+        warn("Flim closed unexpectedly due to the following error: #{error.message}") if error
         exit
     end
 
@@ -145,7 +132,7 @@ class Flim
     def virtual_buffer_update_char(char)
         virtual_buffer[virtual_cursor[0]][virtual_cursor[1]] = char
         virtual_cursor[1] += 1
-    end 
+    end
 
     def execute_escape_code(code)
         $stdout.print "\e[#{code}"
@@ -153,5 +140,5 @@ class Flim
 
     def log(message)
         File.write('log.txt', message + "\n", mode: 'a')
-    end 
+    end
 end
